@@ -1,0 +1,27 @@
+.network {
+    mat-card {
+        margin-bottom: 16px;
+    }
+
+    .controls {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        margin-bottom: 12px;
+    }
+
+    .result__header {
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    table {
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    .empty {
+        color: rgba(0, 0, 0, 0.6);
+        font-style: italic;
+    }
+}

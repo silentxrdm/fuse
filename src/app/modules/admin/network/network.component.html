@@ -1,0 +1,38 @@
+<div class="network">
+    <mat-card>
+        <mat-card-header>
+            <mat-card-title>LAN scanner</mat-card-title>
+            <mat-card-subtitle>Ping hosts on your local subnet and list responsive clients.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+            <form class="controls" [formGroup]="form" (ngSubmit)="scan()">
+                <mat-form-field appearance="fill">
+                    <mat-label>Subnet (optional)</mat-label>
+                    <input matInput placeholder="192.168.1.0/24" formControlName="subnet" />
+                </mat-form-field>
+                <button mat-flat-button color="primary" type="submit" [disabled]="loading">
+                    {{ loading ? 'Scanning...' : 'Scan' }}
+                </button>
+            </form>
+
+            <mat-progress-bar *ngIf="loading" mode="indeterminate"></mat-progress-bar>
+
+            <div class="result" *ngIf="!loading && subnet">
+                <div class="result__header">Subnet scanned: {{ subnet }}</div>
+                <table mat-table [dataSource]="hosts" class="mat-elevation-z1" *ngIf="hosts.length > 0">
+                    <ng-container matColumnDef="ip">
+                        <th mat-header-cell *matHeaderCellDef>IP</th>
+                        <td mat-cell *matCellDef="let host">{{ host.ip }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="hostname">
+                        <th mat-header-cell *matHeaderCellDef>Hostname</th>
+                        <td mat-cell *matCellDef="let host">{{ host.hostname || '—' }}</td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="['ip', 'hostname']"></tr>
+                    <tr mat-row *matRowDef="let row; columns: ['ip', 'hostname'];"></tr>
+                </table>
+                <div class="empty" *ngIf="hosts.length === 0">No responsive hosts found.</div>
+            </div>
+        </mat-card-content>
+    </mat-card>
+</div>
