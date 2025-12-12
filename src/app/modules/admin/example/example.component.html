@@ -1,9 +1,297 @@
-<div class="flex min-w-0 flex-auto flex-col">
-    <!-- Main -->
-    <div class="flex-auto p-6 sm:p-10">
-        <!-- CONTENT GOES HERE -->
-        <div
-            class="h-400 max-h-400 min-h-400 rounded-2xl border-2 border-dashed border-gray-300"
-        ></div>
+<div class="page">
+    <div class="page__header">
+        <div>
+            <h1 class="page__title">Data sources & generated views</h1>
+            <p class="page__subtitle">
+                Add API sources with credentials, preview endpoints, and save reusable views that render data inside the app.
+            </p>
+        </div>
     </div>
+
+    <div class="layout">
+        <mat-card class="card">
+            <div class="card__header">
+                <div>
+                    <h2>Add an API source</h2>
+                    <p class="hint">Stored securely in the local SQLite database by the backend.</p>
+                </div>
+            </div>
+            <form class="form" [formGroup]="sourceForm" (ngSubmit)="submitSource()">
+                <div class="form__grid">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Name</mat-label>
+                        <input matInput formControlName="name" required />
+                    </mat-form-field>
+
+                    <mat-form-field appearance="fill">
+                        <mat-label>Base URL</mat-label>
+                        <input matInput formControlName="baseUrl" required placeholder="https://api.example.com" />
+                    </mat-form-field>
+
+                    <mat-form-field appearance="fill">
+                        <mat-label>Authentication</mat-label>
+                        <mat-select formControlName="authType">
+                            <mat-option *ngFor="let auth of authTypes" [value]="auth.value">{{ auth.label }}</mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+
+                <div class="form__grid" *ngIf="sourceForm.value.authType === 'apiKeyHeader'">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Header name</mat-label>
+                        <input matInput formControlName="apiKeyHeader" placeholder="X-API-KEY" />
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>Header value</mat-label>
+                        <input matInput formControlName="apiKeyValue" />
+                    </mat-form-field>
+                </div>
+
+                <div class="form__grid" *ngIf="sourceForm.value.authType === 'bearer'">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Bearer token</mat-label>
+                        <input matInput formControlName="bearerToken" />
+                    </mat-form-field>
+                </div>
+
+                <div class="form__grid" *ngIf="sourceForm.value.authType === 'basic'">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Username</mat-label>
+                        <input matInput formControlName="username" />
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>Password</mat-label>
+                        <input matInput type="password" formControlName="password" />
+                    </mat-form-field>
+                </div>
+
+                <div class="actions">
+                    <button mat-flat-button color="primary" type="submit" [disabled]="addingSource">
+                        <mat-icon>add</mat-icon>
+                        Add source
+                    </button>
+                </div>
+            </form>
+
+            <div class="sources" *ngIf="sources.length > 0">
+                <h3>Saved sources</h3>
+                <mat-list>
+                    <mat-list-item *ngFor="let source of sources">
+                        <span matListItemTitle>{{ source.name }}</span>
+                        <span matListItemLine>{{ source.baseUrl }}</span>
+                        <span class="chip">{{ source.authType }}</span>
+                    </mat-list-item>
+                </mat-list>
+            </div>
+        </mat-card>
+
+        <mat-card class="card">
+            <div class="card__header">
+                <div>
+                    <h2>Preview an endpoint</h2>
+                    <p class="hint">Run a request through the backend bridge and see the detected fields.</p>
+                </div>
+            </div>
+
+            <form class="form" [formGroup]="previewForm" (ngSubmit)="preview()">
+                <div class="form__grid">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Source</mat-label>
+                        <mat-select formControlName="sourceId">
+                            <mat-option *ngFor="let source of sources" [value]="source.id">{{ source.name }}</mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>HTTP method</mat-label>
+                        <mat-select formControlName="method">
+                            <mat-option *ngFor="let method of methods" [value]="method">{{ method }}</mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>Path</mat-label>
+                        <input matInput formControlName="path" placeholder="/v1/messages" />
+                    </mat-form-field>
+                </div>
+
+                <mat-form-field appearance="fill" class="form__full">
+                    <mat-label>Request payload (JSON)</mat-label>
+                    <textarea matInput rows="4" formControlName="payload" placeholder="Optional JSON body"></textarea>
+                </mat-form-field>
+
+                <div class="actions">
+                    <button mat-flat-button color="primary" type="submit" [disabled]="loadingPreview">
+                        <mat-icon>visibility</mat-icon>
+                        Preview response
+                    </button>
+                </div>
+                <p class="error" *ngIf="previewError">{{ previewError }}</p>
+
+            <div *ngIf="previewResult" class="preview">
+                <div class="preview__meta">
+                    <div>
+                        <h3>Preview sample</h3>
+                        <p class="hint">{{ previewResult.url }}</p>
+                    </div>
+                    <mat-form-field appearance="fill" class="view-name">
+                        <mat-label>View name</mat-label>
+                        <input matInput formControlName="viewName" />
+                    </mat-form-field>
+                </div>
+
+                <div class="fields" *ngIf="availableFields.length > 0">
+                    <h4>Fields to include</h4>
+                    <div class="field-grid">
+                        <label class="field" *ngFor="let field of availableFields">
+                            <mat-checkbox
+                                [checked]="selectedFields.has(field.name)"
+                                (change)="toggleField(field.name, $event.checked)">
+                            </mat-checkbox>
+                            <div>
+                                <div class="field__name">{{ field.name }}</div>
+                                <div class="field__type">{{ field.type }}</div>
+                                <div class="field__example">Example: {{ field.example | json }}</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="json-view">
+                    <pre>{{ previewResult.preview | json }}</pre>
+                </div>
+
+                <div class="actions">
+                    <button mat-stroked-button color="primary" type="button" (click)="saveView()" [disabled]="savingView">
+                        <mat-icon>save</mat-icon>
+                        Save as view
+                    </button>
+                </div>
+            </div>
+            </form>
+        </mat-card>
+    </div>
+
+    <mat-divider></mat-divider>
+
+    <mat-card class="card">
+        <div class="card__header">
+            <div>
+                <h2>Generated views</h2>
+                <p class="hint">Load data using saved definitions and render it in the app.</p>
+            </div>
+        </div>
+
+        <div class="views" *ngIf="views.length > 0; else noViews">
+            <div class="view" *ngFor="let view of views">
+                <div class="view__meta">
+                    <div>
+                        <div class="view__name">{{ view.name }}</div>
+                        <div class="view__path">{{ view.method }} {{ view.path || '/' }}</div>
+                    </div>
+                    <button mat-button color="primary" (click)="loadViewData(view)">
+                        <mat-icon>refresh</mat-icon>
+                        Load data
+                    </button>
+                </div>
+            </div>
+        </div>
+        <ng-template #noViews>
+            <p class="hint">No views saved yet.</p>
+        </ng-template>
+
+        <div class="table" *ngIf="viewData">
+            <div class="table__header">
+                <div>
+                    <h3>Data from {{ viewData.url }}</h3>
+                    <p class="hint">Showing selected fields only.</p>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th *ngFor="let column of displayColumns(asRows(viewData.data), viewData.fields)">{{ column }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let row of asRows(viewData.data)">
+                        <td *ngFor="let column of displayColumns(asRows(viewData.data), viewData.fields)">
+                            {{ row[column] | json }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <mat-progress-bar *ngIf="loadingViewData" mode="indeterminate"></mat-progress-bar>
+    </mat-card>
+
+    <mat-card class="card">
+        <div class="card__header">
+            <div>
+                <h2>Pages & navigation</h2>
+                <p class="hint">Create pages backed by a saved view. Pages appear automatically in the menu.</p>
+            </div>
+        </div>
+
+        <form class="form" [formGroup]="pageForm" (ngSubmit)="savePage()">
+            <div class="form__grid">
+                <mat-form-field appearance="fill">
+                    <mat-label>Title</mat-label>
+                    <input matInput formControlName="title" placeholder="Customers" />
+                </mat-form-field>
+                <mat-form-field appearance="fill">
+                    <mat-label>Slug</mat-label>
+                    <input matInput formControlName="slug" placeholder="customers" />
+                </mat-form-field>
+                <mat-form-field appearance="fill">
+                    <mat-label>View</mat-label>
+                    <mat-select formControlName="viewId" (selectionChange)="updatePageFields($event.value)">
+                        <mat-option *ngFor="let view of views" [value]="view.id">{{ view.name }}</mat-option>
+                    </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="fill">
+                    <mat-label>Submit method</mat-label>
+                    <mat-select formControlName="submitMethod">
+                        <mat-option *ngFor="let method of methods" [value]="method">{{ method }}</mat-option>
+                    </mat-select>
+                </mat-form-field>
+            </div>
+
+            <div class="form__grid">
+                <mat-form-field appearance="fill">
+                    <mat-label>Table fields</mat-label>
+                    <mat-select formControlName="tableFields" multiple>
+                        <mat-option *ngFor="let field of pageFieldOptions()" [value]="field">{{ field }}</mat-option>
+                    </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="fill">
+                    <mat-label>Form fields</mat-label>
+                    <mat-select formControlName="formFields" multiple>
+                        <mat-option *ngFor="let field of pageFieldOptions()" [value]="field">{{ field }}</mat-option>
+                    </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="fill">
+                    <mat-label>Submit path override (optional)</mat-label>
+                    <input matInput formControlName="submitPath" placeholder="/items/{id}" />
+                </mat-form-field>
+            </div>
+
+            <div class="actions">
+                <button mat-flat-button color="primary" type="submit">
+                    <mat-icon>add</mat-icon>
+                    Add page
+                </button>
+            </div>
+        </form>
+
+        <div class="pages" *ngIf="pages.length > 0">
+            <h3>Menu pages</h3>
+            <div class="page-row" *ngFor="let page of pages">
+                <div>
+                    <div class="page-row__title">{{ page.title }}</div>
+                    <div class="page-row__slug">/pages/{{ page.slug }}</div>
+                </div>
+                <div class="page-row__meta">View #{{ page.viewId }}</div>
+            </div>
+        </div>
+    </mat-card>
 </div>
