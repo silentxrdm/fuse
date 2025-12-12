@@ -14,6 +14,48 @@ Run `ng generate component component-name` to generate a new component. You can 
 
 Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
 
+## API bridge server
+
+The `server` folder contains a lightweight Node.js backend that can:
+
+- Store encrypted API source definitions in a local SQLite database (using the built-in `node:sqlite`).
+- Proxy and preview external endpoints while applying your chosen authentication method.
+- Serve the Angular production build from the `dist/` folder so the UI and backend run together.
+
+### Configuration
+
+1. Copy `.env.example` to `.env` and set a strong `APP_SECRET` to encrypt credentials at rest. You can also override the `PORT`
+   if needed (defaults to `4000`).
+2. Build the Angular app with `npm run build` so the backend can serve the generated assets from `dist/`.
+
+### Running
+
+```bash
+node server/server.js
+```
+
+REST endpoints exposed by the backend:
+
+- `GET /api/sources` — list saved API sources without exposing secrets.
+- `POST /api/sources` — add a source with `{ name, baseUrl, authType, credentials }` (supports `apiKeyHeader`, `bearer`, and
+  `basic` for now).
+- `GET /api/sources/:id` — fetch a single source definition.
+- `POST /api/sources/:id/preview` — call an endpoint from the saved source with `{ path, method, payload }` and receive a data
+  preview plus a derived field list to help build UI widgets.
+- `GET /api/views` — list saved view definitions that reference a source and specific endpoint.
+- `POST /api/views` — create a view with `{ sourceId, name, path, method, fields }`.
+- `GET /api/views/:id/data` — execute a view through the backend and return filtered data for rendering in the Angular app.
+
+If the `dist/` folder is present the backend will also serve the Angular app, enabling a single deployable bundle.
+
+### Frontend data-source page
+
+The default `example` route now surfaces a UI to:
+
+- Add API sources and credential details
+- Preview endpoints through the backend bridge and inspect detected fields
+- Save previews as reusable views and load their data into a table
+
 ## Running unit tests
 
 Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
