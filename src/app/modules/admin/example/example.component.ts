@@ -81,7 +81,7 @@ export class ExampleComponent implements OnInit {
         path: ['', Validators.required],
         method: ['GET'],
         payload: [''],
-        viewName: ['', Validators.required],
+        viewName: [''],
     });
 
     constructor(private readonly fb: FormBuilder, private readonly api: ApiSourcesService) {}
@@ -205,8 +205,15 @@ export class ExampleComponent implements OnInit {
             return;
         }
 
-        if (this.previewForm.invalid || this.previewForm.controls.viewName.invalid) {
+        const viewName = this.previewForm.value.viewName?.trim();
+        if (this.previewForm.invalid) {
             this.previewForm.markAllAsTouched();
+            return;
+        }
+
+        if (!viewName) {
+            this.previewError = 'Enter a view name before saving a view.';
+            this.previewForm.controls.viewName.markAsTouched();
             return;
         }
 
@@ -214,7 +221,7 @@ export class ExampleComponent implements OnInit {
         this.api
             .createView({
                 sourceId: this.previewForm.value.sourceId!,
-                name: this.previewForm.value.viewName!,
+                name: viewName,
                 path: this.previewForm.value.path!,
                 method: this.previewForm.value.method || 'GET',
                 fields: Array.from(this.selectedFields),
