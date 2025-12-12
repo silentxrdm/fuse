@@ -63,17 +63,23 @@ function serveStaticFile(res, filePath) {
 }
 
 function resolveDistPath() {
-    const candidate = path.join(__dirname, '..', 'dist');
-    if (!fs.existsSync(candidate)) {
+    const distRoot = path.join(__dirname, '..', 'dist');
+    const fuseDist = path.join(distRoot, 'fuse');
+
+    if (fs.existsSync(fuseDist)) {
+        return fuseDist;
+    }
+
+    if (!fs.existsSync(distRoot)) {
         return null;
     }
 
-    const children = fs.readdirSync(candidate);
+    const children = fs.readdirSync(distRoot);
     if (children.length === 1) {
-        return path.join(candidate, children[0]);
+        return path.join(distRoot, children[0]);
     }
 
-    return candidate;
+    return distRoot;
 }
 
 module.exports = {

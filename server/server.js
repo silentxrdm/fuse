@@ -257,5 +257,7 @@ server.listen(PORT, () => {
     console.log(`API bridge server listening on http://localhost:${PORT}`);
     if (!distRoot) {
         console.log('Angular dist folder not found. Build the app to enable static hosting.');
+    } else {
+        console.log(`Serving static assets from ${distRoot}`);
     }
 });
