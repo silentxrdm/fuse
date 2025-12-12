@@ -97,7 +97,7 @@ function serveStaticFile(res, filePath) {
 
 function resolveDistPath() {
     const distRoot = path.join(__dirname, '..', 'dist');
-    const fuseDist = path.join(distRoot, 'fuse');
+    const fuseDist = path.join(distRoot, 'fuse/browser');
 
     if (fs.existsSync(fuseDist)) {
         return fuseDist;
