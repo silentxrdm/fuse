@@ -42,6 +42,39 @@ async function readJsonBody(req) {
     });
 }
 
+function getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    switch (ext) {
+        case '.html':
+            return 'text/html';
+        case '.js':
+            return 'text/javascript';
+        case '.mjs':
+            return 'text/javascript';
+        case '.css':
+            return 'text/css';
+        case '.json':
+            return 'application/json';
+        case '.svg':
+            return 'image/svg+xml';
+        case '.png':
+            return 'image/png';
+        case '.jpg':
+        case '.jpeg':
+            return 'image/jpeg';
+        case '.gif':
+            return 'image/gif';
+        case '.woff':
+            return 'font/woff';
+        case '.woff2':
+            return 'font/woff2';
+        case '.ico':
+            return 'image/x-icon';
+        default:
+            return 'application/octet-stream';
+    }
+}
+
 function serveStaticFile(res, filePath) {
     const exists = fs.existsSync(filePath);
     if (!exists) {
@@ -50,7 +83,7 @@ function serveStaticFile(res, filePath) {
 
     const stream = fs.createReadStream(filePath);
     stream.on('open', () => {
-        res.writeHead(200);
+        res.writeHead(200, { 'Content-Type': getMimeType(filePath) });
         stream.pipe(res);
     });
 
