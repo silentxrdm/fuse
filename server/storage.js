@@ -11,6 +11,7 @@ class SourceStore {
         this.db = new DatabaseSync(dbPath);
         this.createTables();
         this.ensurePageColumns();
+        this.ensureNetworkTables();
         this.seedDefaultUser();
     }
 
@@ -90,6 +91,38 @@ class SourceStore {
         addColumn('edit_fields_json', 'TEXT');
         addColumn('edit_submit_method', "TEXT DEFAULT 'PUT'");
         addColumn('edit_submit_path', 'TEXT');
+    }
+
+    ensureNetworkTables() {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS network_hosts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT NOT NULL UNIQUE,
+                hostname TEXT,
+                label TEXT,
+                note TEXT,
+                tags_json TEXT,
+                source TEXT DEFAULT 'manual',
+                last_seen TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS network_services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host_id INTEGER NOT NULL,
+                port INTEGER NOT NULL,
+                protocol TEXT DEFAULT 'tcp',
+                service TEXT,
+                note TEXT,
+                url TEXT,
+                last_seen TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (host_id) REFERENCES network_hosts(id) ON DELETE CASCADE
+            );
+        `);
     }
 
     seedDefaultUser() {
@@ -408,6 +441,183 @@ class SourceStore {
             editSubmitPath: row.edit_submit_path || row.submit_path || '',
             createdAt: row.created_at,
         };
+    }
+
+    // Network hosts
+    listNetworkHosts() {
+        const hosts = this.db
+            .prepare(
+                `SELECT id, ip, hostname, label, note, tags_json, source, last_seen, created_at, updated_at
+                 FROM network_hosts ORDER BY ip`
+            )
+            .all();
+        const services = this.db
+            .prepare(
+                `SELECT host_id, port, protocol, service, note, url, last_seen FROM network_services ORDER BY port`
+            )
+            .all();
+
+        const serviceMap = new Map();
+        for (const svc of services) {
+            const list = serviceMap.get(svc.host_id) || [];
+            list.push({
+                port: svc.port,
+                protocol: svc.protocol || 'tcp',
+                service: svc.service || null,
+                note: svc.note || null,
+                url: svc.url || null,
+                lastSeen: svc.last_seen || null,
+            });
+            serviceMap.set(svc.host_id, list);
+        }
+
+        return hosts.map((host) => ({
+            id: host.id,
+            ip: host.ip,
+            hostname: host.hostname || null,
+            label: host.label || null,
+            note: host.note || null,
+            tags: this.parseJson(host.tags_json, []),
+            source: host.source || 'manual',
+            lastSeen: host.last_seen || null,
+            createdAt: host.created_at,
+            updatedAt: host.updated_at,
+            services: serviceMap.get(host.id) || [],
+        }));
+    }
+
+    getNetworkHost(id) {
+        const row = this.db
+            .prepare(
+                `SELECT id, ip, hostname, label, note, tags_json, source, last_seen, created_at, updated_at
+                 FROM network_hosts WHERE id = ?`
+            )
+            .get(id);
+        if (!row) return null;
+        const services = this.db
+            .prepare('SELECT port, protocol, service, note, url, last_seen FROM network_services WHERE host_id = ? ORDER BY port')
+            .all(id)
+            .map((svc) => ({
+                port: svc.port,
+                protocol: svc.protocol || 'tcp',
+                service: svc.service || null,
+                note: svc.note || null,
+                url: svc.url || null,
+                lastSeen: svc.last_seen || null,
+            }));
+
+        return {
+            id: row.id,
+            ip: row.ip,
+            hostname: row.hostname || null,
+            label: row.label || null,
+            note: row.note || null,
+            tags: this.parseJson(row.tags_json, []),
+            source: row.source || 'manual',
+            lastSeen: row.last_seen || null,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            services,
+        };
+    }
+
+    upsertNetworkHost(input) {
+        const ip = input.ip?.trim();
+        if (!ip) {
+            throw new Error('IP is required');
+        }
+        const source = input.source?.trim() || 'manual';
+        const hostname = input.hostname?.trim() || null;
+        const label = input.label?.trim() || null;
+        const note = input.note?.trim() || null;
+        const tags = Array.isArray(input.tags) ? input.tags : [];
+        const lastSeen = input.lastSeen || null;
+
+        const existing = this.db
+            .prepare(
+                `SELECT id, hostname, label, note, tags_json, source, last_seen FROM network_hosts WHERE ip = ?`
+            )
+            .get(ip);
+
+        if (existing) {
+            const mergedTags = Array.from(new Set([...(this.parseJson(existing.tags_json, []) || []), ...tags]));
+            this.db.prepare(
+                `UPDATE network_hosts
+                 SET hostname = COALESCE(?, hostname),
+                     label = COALESCE(?, label),
+                     note = COALESCE(?, note),
+                     tags_json = ?,
+                     source = COALESCE(?, source),
+                     last_seen = COALESCE(?, last_seen),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE ip = ?`
+            ).run(hostname, label, note, JSON.stringify(mergedTags), source, lastSeen, ip);
+            return this.getNetworkHost(existing.id);
+        }
+
+        const stmt = this.db.prepare(
+            `INSERT INTO network_hosts (ip, hostname, label, note, tags_json, source, last_seen)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+        );
+        const result = stmt.run(ip, hostname, label, note, JSON.stringify(tags), source, lastSeen);
+        return this.getNetworkHost(result.lastInsertRowid);
+    }
+
+    addNetworkService(hostId, service) {
+        const host = this.getNetworkHost(hostId);
+        if (!host) {
+            throw new Error('Host not found');
+        }
+
+        const payload = {
+            port: Number(service.port),
+            protocol: service.protocol?.trim().toLowerCase() || 'tcp',
+            name: service.service?.trim() || null,
+            note: service.note?.trim() || null,
+            url: service.url?.trim() || null,
+            lastSeen: service.lastSeen || null,
+        };
+
+        if (!payload.port) {
+            throw new Error('Port is required');
+        }
+
+        this.db
+            .prepare(
+                `INSERT INTO network_services (host_id, port, protocol, service, note, url, last_seen)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`
+            )
+            .run(hostId, payload.port, payload.protocol, payload.name, payload.note, payload.url, payload.lastSeen);
+
+        return this.getNetworkHost(hostId);
+    }
+
+    replaceNetworkServices(hostId, services = []) {
+        const host = this.getNetworkHost(hostId);
+        if (!host) {
+            throw new Error('Host not found');
+        }
+
+        const stmt = this.db.prepare(
+            `INSERT INTO network_services (host_id, port, protocol, service, note, url, last_seen)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+        );
+
+        this.db.prepare('DELETE FROM network_services WHERE host_id = ?').run(hostId);
+        for (const svc of services) {
+            if (!svc || !svc.port) continue;
+            stmt.run(
+                hostId,
+                Number(svc.port),
+                (svc.protocol || 'tcp').toLowerCase(),
+                svc.service || null,
+                svc.note || null,
+                svc.url || null,
+                svc.lastSeen || null,
+            );
+        }
+
+        return this.getNetworkHost(hostId);
     }
 }
 
