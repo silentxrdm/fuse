@@ -63,6 +63,17 @@ The default `example` route now surfaces a UI to:
 - You can create pages backed by saved views; they automatically show up in the navigation and render tables at `/pages/:slug` with a dedicated edit screen at `/pages/:slug/edit` for record updates.
 - Network utilities are exposed at `GET /api/network/scan` and the `/network` route in the Angular app to probe your local subnet and list responsive hosts with reverse DNS lookups when available.
 
+### Network inventory module
+
+- The backend persists network hosts, port-scan results, and service links in SQLite so you can track machines discovered via automated scans or manual entry.
+- Key REST endpoints:
+  - `GET /api/network/hosts` — list known hosts with their captured services.
+  - `POST /api/network/hosts` — create or update a host with `{ ip, hostname?, notes? }`.
+  - `POST /api/network/import` — bulk add hosts from a scan tool payload (expects `{ hosts: [...] }`).
+  - `POST /api/network/scan` — trigger a port scan for a single host or subnet and persist the results.
+  - `POST /api/network/hosts/:id/services` — attach service links (e.g., RDP, SSH, admin UIs) for quick launch from anywhere in the app.
+- The Angular `/network` page surfaces tables and forms to manage hosts, import scan results, start port scans, and add service links that can be reused throughout the UI.
+
 ## Running unit tests
 
 Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
