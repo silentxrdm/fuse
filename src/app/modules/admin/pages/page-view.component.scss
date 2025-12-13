@@ -1,0 +1,41 @@
+.page-view {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.title {
+    margin: 0;
+}
+
+.slug {
+    color: var(--fuse-text-secondary);
+    font-size: 13px;
+}
+
+.table-wrapper {
+    overflow: auto;
+}
+
+.page-card {
+    padding: 8px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.actions {
+    margin-top: 16px;
+    display: flex;
+    justify-content: flex-end;
+}

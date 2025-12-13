@@ -14,6 +14,66 @@ Run `ng generate component component-name` to generate a new component. You can 
 
 Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
 
+## API bridge server
+
+The `server` folder contains a lightweight Node.js backend that can:
+
+- Store encrypted API source definitions in a local SQLite database (using the built-in `node:sqlite`).
+- Proxy and preview external endpoints while applying your chosen authentication method.
+- Serve the Angular production build from the `dist/` folder so the UI and backend run together.
+
+### Configuration
+
+1. Copy `.env.example` to `.env` and set a strong `APP_SECRET` to encrypt credentials at rest. You can also override the `PORT`
+   if needed (defaults to `4000`).
+2. Build the Angular app with `npm run build` so the backend can serve the generated assets from `dist/`.
+
+### Running
+
+```bash
+node server/server.js
+```
+
+REST endpoints exposed by the backend:
+
+- `GET /api/sources` — list saved API sources without exposing secrets.
+- `POST /api/sources` — add a source with `{ name, baseUrl, authType, credentials }` (supports `apiKeyHeader`, `bearer`, and
+  `basic` for now).
+- `GET /api/sources/:id` — fetch a single source definition.
+- `POST /api/sources/:id/preview` — call an endpoint from the saved source with `{ path, method, payload }` and receive a data
+  preview plus a derived field list to help build UI widgets.
+- `GET /api/views` — list saved view definitions that reference a source and specific endpoint.
+- `POST /api/views` — create a view with `{ sourceId, name, path, method, fields }`.
+- `GET /api/views/:id/data` — execute a view through the backend and return filtered data for rendering in the Angular app.
+
+If the `dist/` folder is present the backend will also serve the Angular app, enabling a single deployable bundle.
+
+### Frontend data-source page
+
+The default `example` route now surfaces a UI to:
+
+- Add API sources and credential details
+- Preview endpoints through the backend bridge and inspect detected fields
+- Save previews as reusable views and load their data into a table
+
+### Auth & dynamic pages
+
+- The backend now issues JWTs for sign-up/sign-in and persists users in the local SQLite database (seeded with a default admin).
+- The Angular app uses the live backend endpoints (mock API disabled) for auth, navigation, and user profile data.
+- You can create pages backed by saved views; they automatically show up in the navigation and render tables at `/pages/:slug` with a dedicated edit screen at `/pages/:slug/edit` for record updates.
+- Network utilities are exposed at `GET /api/network/scan` and the `/network` route in the Angular app to probe your local subnet and list responsive hosts with reverse DNS lookups when available.
+
+### Network inventory module
+
+- The backend persists network hosts, port-scan results, and service links in SQLite so you can track machines discovered via automated scans or manual entry.
+- Key REST endpoints:
+  - `GET /api/network/hosts` — list known hosts with their captured services.
+  - `POST /api/network/hosts` — create or update a host with `{ ip, hostname?, notes? }`.
+  - `POST /api/network/import` — bulk add hosts from a scan tool payload (expects `{ hosts: [...] }`).
+  - `POST /api/network/scan` — trigger a port scan for a single host or subnet and persist the results.
+  - `POST /api/network/hosts/:id/services` — attach service links (e.g., RDP, SSH, admin UIs) for quick launch from anywhere in the app.
+- The Angular `/network` page surfaces tables and forms to manage hosts, import scan results, start port scans, and add service links that can be reused throughout the UI.
+
 ## Running unit tests
 
 Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).

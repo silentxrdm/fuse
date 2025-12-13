@@ -1,0 +1,58 @@
+<div class="page-view" *ngIf="page; else loadingBlock">
+    <div class="header">
+        <h2 class="title">{{ page.title }}</h2>
+        <div class="slug">/pages/{{ page.slug }}</div>
+    </div>
+
+    <mat-card class="page-card" *ngIf="!editMode">
+        <mat-card-header>
+            <mat-card-title>Data</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+            <mat-progress-bar *ngIf="loading" mode="indeterminate"></mat-progress-bar>
+            <div class="table-wrapper" *ngIf="!loading">
+                <table mat-table [dataSource]="rows()" class="mat-elevation-z1">
+                    <ng-container *ngFor="let column of displayedColumns()" [matColumnDef]="column">
+                        <th mat-header-cell *matHeaderCellDef>{{ column }}</th>
+                        <td mat-cell *matCellDef="let element">{{ element[column] }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="actions">
+                        <th mat-header-cell *matHeaderCellDef class="actions-col">Actions</th>
+                        <td mat-cell *matCellDef="let row">
+                            <button mat-button color="primary" (click)="openEdit(row)">Edit</button>
+                        </td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="displayedColumnsWithActions()"></tr>
+                    <tr mat-row *matRowDef="let row; columns: displayedColumnsWithActions();"></tr>
+                </table>
+            </div>
+        </mat-card-content>
+    </mat-card>
+
+    <mat-card class="page-card" *ngIf="editMode">
+        <mat-card-header>
+            <mat-card-title>Edit record</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+            <form [formGroup]="form" class="form-grid">
+                <mat-form-field *ngFor="let field of (page.editFields?.length ? page.editFields : page.formFields)" appearance="outline">
+                    <mat-label>{{ field }}</mat-label>
+                    <input matInput [formControlName]="field" />
+                </mat-form-field>
+            </form>
+            <div class="actions">
+                <button mat-flat-button color="primary" (click)="submit()" [disabled]="submitting">
+                    {{ submitting ? 'Saving...' : 'Save changes' }}
+                </button>
+            </div>
+        </mat-card-content>
+    </mat-card>
+</div>
+
+<ng-template #loadingBlock>
+    <mat-card>
+        <mat-card-content>
+            <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+        </mat-card-content>
+    </mat-card>
+</ng-template>

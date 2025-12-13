@@ -1,0 +1,93 @@
+.network {
+    mat-card {
+        margin-bottom: 16px;
+    }
+
+    .add,
+    .service-form form,
+    .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        align-items: flex-end;
+    }
+
+    .controls {
+        flex-direction: row;
+        align-items: flex-end;
+    }
+
+    .result__header {
+        font-weight: 600;
+        margin-bottom: 8px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    table {
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    .host {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .host__label {
+        font-weight: 600;
+    }
+
+    .host__muted {
+        color: rgba(0, 0, 0, 0.6);
+        font-size: 12px;
+    }
+
+    .tags {
+        mat-chip {
+            height: 22px;
+            font-size: 12px;
+        }
+    }
+
+    .services {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .service {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 16px;
+        background: #eef2ff;
+        color: #1e3a8a;
+        text-decoration: none;
+        font-size: 13px;
+    }
+
+    .empty {
+        color: rgba(0, 0, 0, 0.6);
+        font-style: italic;
+    }
+
+    .service-form {
+        margin-top: 16px;
+
+        .title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+    }
+}
