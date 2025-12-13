@@ -20,6 +20,7 @@ import {
     PreviewResponse,
     ViewDataResponse,
 } from 'app/core/api-sources/api-sources.service';
+import { NavigationService } from 'app/core/navigation/navigation.service';
 import { CreatePagePayload, PageDefinition, PagesService } from 'app/core/pages/pages.service';
 
 @Component({
@@ -58,6 +59,21 @@ export class ExampleComponent implements OnInit {
     savingView = false;
     addingSource = false;
 
+    private readonly pageFormDefaults = {
+        title: '',
+        slug: '',
+        listViewId: null as number | null,
+        editViewId: null as number | null,
+        tableFields: [] as string[],
+        formFields: [] as string[],
+        listFields: [] as string[],
+        editFields: [] as string[],
+        submitMethod: 'PUT',
+        submitPath: '',
+        editSubmitMethod: 'PUT',
+        editSubmitPath: '',
+    };
+
     readonly authTypes: { value: AuthType; label: string }[] = [
         { value: 'none', label: 'None' },
         { value: 'apiKeyHeader', label: 'API Key (Header)' },
@@ -87,24 +103,25 @@ export class ExampleComponent implements OnInit {
     });
 
     pageForm = this.fb.group({
-        title: ['', Validators.required],
-        slug: ['', Validators.required],
-        listViewId: [null as number | null, Validators.required],
-        editViewId: [null as number | null, Validators.required],
-        tableFields: [[] as string[]],
-        formFields: [[] as string[]],
-        listFields: [[] as string[]],
-        editFields: [[] as string[]],
-        submitMethod: ['PUT'],
-        submitPath: [''],
-        editSubmitMethod: ['PUT'],
-        editSubmitPath: [''],
+        title: [this.pageFormDefaults.title, Validators.required],
+        slug: [this.pageFormDefaults.slug, Validators.required],
+        listViewId: [this.pageFormDefaults.listViewId, Validators.required],
+        editViewId: [this.pageFormDefaults.editViewId, Validators.required],
+        tableFields: [this.pageFormDefaults.tableFields],
+        formFields: [this.pageFormDefaults.formFields],
+        listFields: [this.pageFormDefaults.listFields],
+        editFields: [this.pageFormDefaults.editFields],
+        submitMethod: [this.pageFormDefaults.submitMethod],
+        submitPath: [this.pageFormDefaults.submitPath],
+        editSubmitMethod: [this.pageFormDefaults.editSubmitMethod],
+        editSubmitPath: [this.pageFormDefaults.editSubmitPath],
     });
 
     constructor(
         private readonly fb: FormBuilder,
         private readonly api: ApiSourcesService,
         private readonly pagesService: PagesService,
+        private readonly navigation: NavigationService,
     ) {}
 
     ngOnInit(): void {
@@ -308,7 +325,9 @@ export class ExampleComponent implements OnInit {
         this.pagesService.createPage(payload).subscribe({
             next: (page) => {
                 this.pages = [page, ...this.pages];
-                this.pageForm.reset({ submitMethod: 'PUT' });
+                this.loadPages();
+                this.pageForm.reset(this.pageFormDefaults);
+                this.navigation.get().subscribe();
             },
             error: (error) => console.error(error),
         });
