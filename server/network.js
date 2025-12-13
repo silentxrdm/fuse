@@ -1,6 +1,7 @@
 const os = require('node:os');
 const dns = require('node:dns').promises;
 const { exec } = require('node:child_process');
+const net = require('node:net');
 
 function getPrivateInterface() {
     const interfaces = os.networkInterfaces();
@@ -111,4 +112,64 @@ async function scan(subnetInput) {
     return { subnet: `${subnet.network}/${subnet.cidr}`, hosts: reachable.sort((a, b) => a.ip.localeCompare(b.ip)) };
 }
 
-module.exports = { scan };
+function portLabel(port) {
+    const map = {
+        22: 'ssh',
+        80: 'http',
+        443: 'https',
+        3306: 'mysql',
+        3389: 'rdp',
+        5432: 'postgres',
+        5900: 'vnc',
+        6379: 'redis',
+        8080: 'http-alt',
+    };
+    return map[port] || null;
+}
+
+function probePort(host, port, timeout = 1000) {
+    return new Promise((resolve) => {
+        const socket = new net.Socket();
+        let resolved = false;
+
+        const done = (open) => {
+            if (resolved) return;
+            resolved = true;
+            socket.destroy();
+            resolve(open);
+        };
+
+        socket.setTimeout(timeout);
+        socket.once('connect', () => done(true));
+        socket.once('timeout', () => done(false));
+        socket.once('error', () => done(false));
+        socket.connect(port, host);
+    });
+}
+
+async function scanPorts(host, ports) {
+    const targets = (ports && ports.length ? ports : [22, 80, 443, 3389, 5900, 8080, 3306, 5432, 6379]).map((p) =>
+        Number(p),
+    );
+    const open = [];
+
+    for (const port of targets) {
+        const isOpen = await probePort(host, port);
+        if (isOpen) {
+            const label = portLabel(port);
+            const url = label === 'https' ? `https://${host}${port === 443 ? '' : `:${port}`}` : null;
+            const httpish = label === 'http' || label === 'http-alt';
+            open.push({
+                port,
+                protocol: 'tcp',
+                service: label,
+                url: url || (httpish ? `http://${host}${port === 80 ? '' : `:${port}`}` : null),
+                lastSeen: new Date().toISOString(),
+            });
+        }
+    }
+
+    return open;
+}
+
+module.exports = { scan, scanPorts };

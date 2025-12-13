@@ -1,8 +1,48 @@
 <div class="network">
     <mat-card>
         <mat-card-header>
+            <mat-card-title>Network inventory</mat-card-title>
+            <mat-card-subtitle>
+                Add hosts manually or import them from scans, then track services and quick admin links.
+            </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+            <form class="add" [formGroup]="addForm" (ngSubmit)="addHost()">
+                <div class="row">
+                    <mat-form-field appearance="fill">
+                        <mat-label>IP address</mat-label>
+                        <input matInput formControlName="ip" placeholder="192.168.1.10" />
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>Hostname</mat-label>
+                        <input matInput formControlName="hostname" />
+                    </mat-form-field>
+                    <mat-form-field appearance="fill">
+                        <mat-label>Label</mat-label>
+                        <input matInput formControlName="label" placeholder="DB server" />
+                    </mat-form-field>
+                </div>
+                <div class="row">
+                    <mat-form-field appearance="fill">
+                        <mat-label>Tags (comma separated)</mat-label>
+                        <input matInput formControlName="tags" placeholder="prod,linux" />
+                    </mat-form-field>
+                    <mat-form-field appearance="fill" class="wide">
+                        <mat-label>Notes</mat-label>
+                        <input matInput formControlName="note" />
+                    </mat-form-field>
+                    <button mat-flat-button color="primary" type="submit" [disabled]="saving || addForm.invalid">
+                        {{ saving ? 'Saving...' : 'Add host' }}
+                    </button>
+                </div>
+            </form>
+        </mat-card-content>
+    </mat-card>
+
+    <mat-card>
+        <mat-card-header>
             <mat-card-title>LAN scanner</mat-card-title>
-            <mat-card-subtitle>Ping hosts on your local subnet and list responsive clients.</mat-card-subtitle>
+            <mat-card-subtitle>Ping hosts on your subnet and import them into your known list.</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
             <form class="controls" [formGroup]="form" (ngSubmit)="scan()">
@@ -11,15 +51,20 @@
                     <input matInput placeholder="192.168.1.0/24" formControlName="subnet" />
                 </mat-form-field>
                 <button mat-flat-button color="primary" type="submit" [disabled]="loading">
-                    {{ loading ? 'Scanning...' : 'Scan' }}
+                    {{ loading ? 'Scanning...' : 'Scan subnet' }}
                 </button>
             </form>
 
             <mat-progress-bar *ngIf="loading" mode="indeterminate"></mat-progress-bar>
 
-            <div class="result" *ngIf="!loading && subnet">
-                <div class="result__header">Subnet scanned: {{ subnet }}</div>
-                <table mat-table [dataSource]="hosts" class="mat-elevation-z1" *ngIf="hosts.length > 0">
+            <div class="result" *ngIf="!loading && scanResult">
+                <div class="result__header">
+                    Subnet scanned: {{ scanResult.subnet }}
+                    <button mat-stroked-button color="primary" (click)="importScanned()" [disabled]="saving">
+                        Save {{ scanResult.hosts.length }} hosts
+                    </button>
+                </div>
+                <table mat-table [dataSource]="scanResult.hosts" class="mat-elevation-z1" *ngIf="scanResult.hosts.length > 0">
                     <ng-container matColumnDef="ip">
                         <th mat-header-cell *matHeaderCellDef>IP</th>
                         <td mat-cell *matCellDef="let host">{{ host.ip }}</td>
@@ -31,7 +76,117 @@
                     <tr mat-header-row *matHeaderRowDef="['ip', 'hostname']"></tr>
                     <tr mat-row *matRowDef="let row; columns: ['ip', 'hostname'];"></tr>
                 </table>
-                <div class="empty" *ngIf="hosts.length === 0">No responsive hosts found.</div>
+                <div class="empty" *ngIf="scanResult.hosts.length === 0">No responsive hosts found.</div>
+            </div>
+        </mat-card-content>
+    </mat-card>
+
+    <mat-card>
+        <mat-card-header>
+            <mat-card-title>Known servers</mat-card-title>
+            <mat-card-subtitle>
+                Hosts persisted in the database. Trigger port scans, attach service links, and reuse these elsewhere.
+            </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+            <table mat-table [dataSource]="knownHosts" class="mat-elevation-z1" *ngIf="knownHosts.length > 0">
+                <ng-container matColumnDef="ip">
+                    <th mat-header-cell *matHeaderCellDef>IP</th>
+                    <td mat-cell *matCellDef="let host">
+                        <div class="host">
+                            <div class="host__label">{{ host.ip }}</div>
+                            <div class="host__muted">{{ host.hostname || '—' }} · ID {{ host.id }}</div>
+                        </div>
+                    </td>
+                </ng-container>
+                <ng-container matColumnDef="label">
+                    <th mat-header-cell *matHeaderCellDef>Details</th>
+                    <td mat-cell *matCellDef="let host">
+                        <div class="host">
+                            <div class="host__label">{{ host.label || 'Untitled' }}</div>
+                            <div class="host__muted">{{ host.note || host.source || 'manual' }}</div>
+                            <div class="tags" *ngIf="host.tags?.length">
+                                <mat-chip-listbox>
+                                    <mat-chip *ngFor="let tag of host.tags">{{ tag }}</mat-chip>
+                                </mat-chip-listbox>
+                            </div>
+                        </div>
+                    </td>
+                </ng-container>
+                <ng-container matColumnDef="services">
+                    <th mat-header-cell *matHeaderCellDef>Services</th>
+                    <td mat-cell *matCellDef="let host">
+                        <div class="services" *ngIf="host.services?.length; else emptyServices">
+                            <a
+                                class="service"
+                                *ngFor="let svc of host.services"
+                                [href]="svc.url || null"
+                                target="_blank"
+                                rel="noreferrer"
+                                [attr.aria-label]="svc.service || svc.port"
+                            >
+                                <mat-icon>open_in_new</mat-icon>
+                                {{ svc.service || 'port' }} {{ svc.port }}
+                            </a>
+                        </div>
+                        <ng-template #emptyServices><span class="host__muted">No services recorded</span></ng-template>
+                    </td>
+                </ng-container>
+                <ng-container matColumnDef="actions">
+                    <th mat-header-cell *matHeaderCellDef>Actions</th>
+                    <td mat-cell *matCellDef="let host">
+                        <button
+                            mat-stroked-button
+                            color="primary"
+                            (click)="triggerPortScan(host)"
+                            [disabled]="portScan[host.id || 0]"
+                        >
+                            {{ portScan[host.id || 0] ? 'Scanning...' : 'Scan ports' }}
+                        </button>
+                    </td>
+                </ng-container>
+                <tr mat-header-row *matHeaderRowDef="['ip', 'label', 'services', 'actions']"></tr>
+                <tr mat-row *matRowDef="let row; columns: ['ip', 'label', 'services', 'actions'];"></tr>
+            </table>
+            <div class="empty" *ngIf="knownHosts.length === 0">No servers saved yet.</div>
+
+            <mat-divider></mat-divider>
+            <div class="service-form">
+                <div class="title">Attach quick links / services</div>
+                <form [formGroup]="serviceForm" (ngSubmit)="addService()">
+                    <div class="row">
+                        <mat-form-field appearance="fill">
+                            <mat-label>Host</mat-label>
+                            <input
+                                matInput
+                                type="number"
+                                formControlName="hostId"
+                                [matTooltip]="'Enter the ID from the table (hover a row)'"
+                            />
+                        </mat-form-field>
+                        <mat-form-field appearance="fill">
+                            <mat-label>Port</mat-label>
+                            <input matInput type="number" formControlName="port" />
+                        </mat-form-field>
+                        <mat-form-field appearance="fill">
+                            <mat-label>Service label</mat-label>
+                            <input matInput formControlName="service" placeholder="rdp / ssh / https" />
+                        </mat-form-field>
+                        <mat-form-field appearance="fill">
+                            <mat-label>Admin URL</mat-label>
+                            <input matInput formControlName="url" placeholder="https://host:443" />
+                        </mat-form-field>
+                    </div>
+                    <div class="row">
+                        <mat-form-field appearance="fill" class="wide">
+                            <mat-label>Notes</mat-label>
+                            <input matInput formControlName="note" />
+                        </mat-form-field>
+                        <button mat-flat-button color="primary" type="submit" [disabled]="serviceForm.invalid || saving">
+                            {{ saving ? 'Saving...' : 'Add service' }}
+                        </button>
+                    </div>
+                </form>
             </div>
         </mat-card-content>
     </mat-card>

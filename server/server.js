@@ -413,6 +413,81 @@ async function requestListener(req, res) {
         return;
     }
 
+    if (url.pathname === '/api/network/servers' && req.method === 'GET') {
+        sendJson(res, 200, { hosts: store.listNetworkHosts() });
+        return;
+    }
+
+    if (url.pathname === '/api/network/servers' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const host = store.upsertNetworkHost({ ...body, lastSeen: body?.lastSeen || new Date().toISOString() });
+            sendJson(res, 201, host);
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/network/servers/import' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const hosts = Array.isArray(body?.hosts) ? body.hosts : [];
+            const saved = hosts
+                .map((h) => {
+                    try {
+                        return store.upsertNetworkHost({ ...h, source: h?.source || 'scan', lastSeen: new Date().toISOString() });
+                    } catch (error) {
+                        return null;
+                    }
+                })
+                .filter(Boolean);
+            sendJson(res, 200, { hosts: saved });
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    const networkServiceMatch = url.pathname.match(/^\/api\/network\/servers\/(\d+)\/services$/);
+    if (networkServiceMatch && req.method === 'POST') {
+        const host = store.getNetworkHost(Number(networkServiceMatch[1]));
+        if (!host) {
+            notFound(res);
+            return;
+        }
+        try {
+            const body = await readJsonBody(req);
+            const updated = store.addNetworkService(host.id, body || {});
+            sendJson(res, 200, updated);
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    const networkPortScanMatch = url.pathname.match(/^\/api\/network\/servers\/(\d+)\/scan-ports$/);
+    if (networkPortScanMatch && req.method === 'POST') {
+        const host = store.getNetworkHost(Number(networkPortScanMatch[1]));
+        if (!host) {
+            notFound(res);
+            return;
+        }
+        try {
+            const body = await readJsonBody(req);
+            const openPorts = await network.scanPorts(host.ip, body?.ports);
+            const merged = [
+                ...(host.services || []).filter((svc) => !openPorts.find((o) => o.port === svc.port)),
+                ...openPorts,
+            ];
+            const updated = store.replaceNetworkServices(host.id, merged);
+            sendJson(res, 200, { host: updated, openPorts });
+        } catch (error) {
+            sendJson(res, 500, { message: error.message });
+        }
+        return;
+    }
+
     const viewSubmitMatch = url.pathname.match(/^\/api\/views\/(\d+)\/submit$/);
     if (viewSubmitMatch && req.method === 'POST') {
         const view = store.getView(Number(viewSubmitMatch[1]));
