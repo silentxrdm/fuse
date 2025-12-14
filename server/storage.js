@@ -12,7 +12,10 @@ class SourceStore {
         this.createTables();
         this.ensurePageColumns();
         this.ensureNetworkTables();
+        this.ensureEntityTables();
+        this.ensureRemoteServersTable();
         this.seedDefaultUser();
+        this.seedDefaultEntities();
     }
 
     ensureDirectory() {
@@ -125,6 +128,46 @@ class SourceStore {
         `);
     }
 
+    ensureEntityTables() {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                display_name TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS entity_fields (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                options_json TEXT,
+                required INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+            );
+        `);
+    }
+
+    ensureRemoteServersTable() {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS remote_servers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                ip TEXT NOT NULL,
+                ssh_port INTEGER DEFAULT 22,
+                web_admin_url TEXT,
+                services_json TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+    }
+
     seedDefaultUser() {
         const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
         const password = process.env.DEFAULT_ADMIN_PASSWORD || 'changeMe123!';
@@ -135,6 +178,38 @@ class SourceStore {
 
         const hash = this.hashPassword(password);
         this.db.prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)').run(email, 'Admin', hash);
+    }
+
+    seedDefaultEntities() {
+        const baseEntities = [
+            {
+                name: 'contacts',
+                displayName: 'Contacts',
+                fields: [
+                    { name: 'name', type: 'text', required: true },
+                    { name: 'phone', type: 'text' },
+                    { name: 'email', type: 'text' },
+                ],
+            },
+            {
+                name: 'cases',
+                displayName: 'Cases',
+                fields: [
+                    { name: 'title', type: 'text', required: true },
+                    { name: 'status', type: 'text' },
+                    { name: 'description', type: 'text' },
+                    { name: 'contact_id', type: 'integer' },
+                ],
+            },
+        ];
+
+        for (const entity of baseEntities) {
+            try {
+                this.createEntity(entity);
+            } catch (error) {
+                // ignore if already created
+            }
+        }
     }
 
     listSources() {
@@ -168,6 +243,325 @@ class SourceStore {
             baseUrl: row.base_url,
             authType: row.auth_type,
             credentials,
+        };
+    }
+
+    sanitizeEntityName(name) {
+        return name
+            .toLowerCase()
+            .replace(/[^a-z0-9_]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 64);
+    }
+
+    mapFieldType(fieldType) {
+        const normalized = (fieldType || 'text').toLowerCase();
+        switch (normalized) {
+            case 'integer':
+            case 'int':
+                return 'INTEGER';
+            case 'number':
+            case 'float':
+            case 'double':
+                return 'REAL';
+            case 'boolean':
+            case 'bool':
+                return 'INTEGER';
+            case 'json':
+                return 'TEXT';
+            case 'date':
+            case 'datetime':
+                return 'TEXT';
+            default:
+                return 'TEXT';
+        }
+    }
+
+    createEntity(input) {
+        const payload = {
+            name: this.sanitizeEntityName(input.name || ''),
+            displayName: input.displayName || input.name,
+            fields: Array.isArray(input.fields) ? input.fields : [],
+        };
+
+        if (!payload.name) {
+            throw new Error('Entity name is required');
+        }
+
+        const existing = this.db.prepare('SELECT id FROM entities WHERE name = ?').get(payload.name);
+        if (existing) {
+            throw new Error('Entity already exists');
+        }
+
+        const insert = this.db.prepare('INSERT INTO entities (name, display_name) VALUES (?, ?)');
+        const result = insert.run(payload.name, payload.displayName || payload.name);
+
+        const entityId = result.lastInsertRowid;
+        const tableName = `entity_${payload.name}`;
+        const columns = payload.fields.map((field) => {
+            const columnType = this.mapFieldType(field.type);
+            const required = field.required ? 'NOT NULL' : '';
+            const columnName = this.sanitizeEntityName(field.name || '');
+            if (!columnName) {
+                throw new Error('Field name is required');
+            }
+            return `${columnName} ${columnType} ${required}`.trim();
+        });
+
+        const schemaColumns = ['id INTEGER PRIMARY KEY AUTOINCREMENT', 'created_at TEXT DEFAULT CURRENT_TIMESTAMP', 'updated_at TEXT'];
+        this.db.exec(`CREATE TABLE IF NOT EXISTS ${tableName} (${[...schemaColumns, ...columns].join(', ')});`);
+
+        const fieldStmt = this.db.prepare(
+            'INSERT INTO entity_fields (entity_id, name, type, options_json, required) VALUES (?, ?, ?, ?, ?)',
+        );
+        for (const field of payload.fields) {
+            const normalizedName = this.sanitizeEntityName(field.name || '');
+            fieldStmt.run(entityId, normalizedName, field.type || 'text', JSON.stringify(field.options || null), field.required ? 1 : 0);
+        }
+
+        return this.getEntityById(entityId);
+    }
+
+    listEntities() {
+        const rows = this.db.prepare('SELECT id, name, display_name, created_at FROM entities ORDER BY created_at DESC').all();
+        return rows.map((row) => ({ id: row.id, name: row.name, displayName: row.display_name, createdAt: row.created_at }));
+    }
+
+    getEntityByName(name) {
+        const row = this.db.prepare('SELECT id FROM entities WHERE name = ?').get(name);
+        return row ? this.getEntityById(row.id) : null;
+    }
+
+    getEntityById(id) {
+        const entity = this.db
+            .prepare('SELECT id, name, display_name, created_at FROM entities WHERE id = ?')
+            .get(id);
+        if (!entity) return null;
+
+        const fields = this.db
+            .prepare('SELECT id, name, type, options_json, required FROM entity_fields WHERE entity_id = ? ORDER BY id ASC')
+            .all(entity.id)
+            .map((f) => ({
+                id: f.id,
+                name: f.name,
+                type: f.type,
+                options: f.options_json ? JSON.parse(f.options_json) : null,
+                required: Boolean(f.required),
+            }));
+
+        return {
+            id: entity.id,
+            name: entity.name,
+            displayName: entity.display_name,
+            createdAt: entity.created_at,
+            fields,
+        };
+    }
+
+    getEntityTableName(entityId) {
+        const entity = this.db.prepare('SELECT name FROM entities WHERE id = ?').get(entityId);
+        return entity ? `entity_${entity.name}` : null;
+    }
+
+    listEntityRecords(entityId) {
+        const entity = this.getEntityById(entityId);
+        if (!entity) return null;
+        const tableName = this.getEntityTableName(entityId);
+        const rows = this.db.prepare(`SELECT * FROM ${tableName} ORDER BY id DESC`).all();
+        return { entity, records: rows };
+    }
+
+    countEntityRecords(entityId) {
+        const tableName = this.getEntityTableName(entityId);
+        if (!tableName) return 0;
+        const row = this.db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get();
+        return Number(row?.count || 0);
+    }
+
+    listRecentEntityRecords(entityId, limit = 5) {
+        const entity = this.getEntityById(entityId);
+        if (!entity) return [];
+        const tableName = this.getEntityTableName(entityId);
+        const rows = this.db.prepare(`SELECT * FROM ${tableName} ORDER BY id DESC LIMIT ?`).all(limit);
+        return rows;
+    }
+
+    createEntityRecord(entityId, input) {
+        const entity = this.getEntityById(entityId);
+        if (!entity) return null;
+        const tableName = this.getEntityTableName(entityId);
+        const payload = {};
+
+        for (const field of entity.fields) {
+            if (field.name in input) {
+                payload[field.name] = this.normalizeFieldValue(field.type, input[field.name]);
+            } else if (field.required) {
+                throw new Error(`Missing required field: ${field.name}`);
+            }
+        }
+
+        const columns = Object.keys(payload);
+        const placeholders = columns.map(() => '?').join(', ');
+        const values = columns.map((name) => payload[name]);
+        const columnSql = columns.length ? `${columns.join(', ')}, updated_at` : 'updated_at';
+        const valueSql = placeholders ? `${placeholders}, CURRENT_TIMESTAMP` : 'CURRENT_TIMESTAMP';
+        const stmt = this.db.prepare(`INSERT INTO ${tableName} (${columnSql}) VALUES (${valueSql})`);
+        const result = stmt.run(...values);
+        return this.getEntityRecordById(entityId, result.lastInsertRowid);
+    }
+
+    normalizeFieldValue(type, value) {
+        const normalized = (type || 'text').toLowerCase();
+        if (value === undefined || value === null) return null;
+        switch (normalized) {
+            case 'integer':
+            case 'int':
+                return Number.parseInt(value, 10);
+            case 'number':
+            case 'float':
+            case 'double':
+                return Number(value);
+            case 'boolean':
+            case 'bool':
+                return value ? 1 : 0;
+            case 'json':
+                return JSON.stringify(value);
+            default:
+                return String(value);
+        }
+    }
+
+    getEntityRecordById(entityId, recordId) {
+        const tableName = this.getEntityTableName(entityId);
+        if (!tableName) return null;
+        return this.db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(recordId);
+    }
+
+    updateEntityRecord(entityId, recordId, input) {
+        const entity = this.getEntityById(entityId);
+        if (!entity) return null;
+        const tableName = this.getEntityTableName(entityId);
+        const payload = {};
+
+        for (const field of entity.fields) {
+            if (field.name in input) {
+                payload[field.name] = this.normalizeFieldValue(field.type, input[field.name]);
+            }
+        }
+
+        if (Object.keys(payload).length === 0) {
+            return this.getEntityRecordById(entityId, recordId);
+        }
+
+        const assignments = Object.keys(payload)
+            .map((name) => `${name} = ?`)
+            .join(', ');
+        const values = Object.keys(payload).map((name) => payload[name]);
+        const stmt = this.db.prepare(
+            `UPDATE ${tableName} SET ${assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        );
+        stmt.run(...values, recordId);
+        return this.getEntityRecordById(entityId, recordId);
+    }
+
+    deleteEntityRecord(entityId, recordId) {
+        const tableName = this.getEntityTableName(entityId);
+        if (!tableName) return false;
+        const stmt = this.db.prepare(`DELETE FROM ${tableName} WHERE id = ?`);
+        stmt.run(recordId);
+        return true;
+    }
+
+    listRemoteServers() {
+        const rows = this.db
+            .prepare(
+                'SELECT id, name, ip, ssh_port, web_admin_url, services_json, notes, created_at, updated_at FROM remote_servers ORDER BY created_at DESC',
+            )
+            .all();
+        return rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            ip: row.ip,
+            sshPort: row.ssh_port,
+            webAdminUrl: row.web_admin_url,
+            services: row.services_json ? JSON.parse(row.services_json) : [],
+            notes: row.notes,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        }));
+    }
+
+    countRemoteServers() {
+        const row = this.db
+            .prepare('SELECT COUNT(*) as count FROM remote_servers')
+            .get();
+        return Number(row?.count || 0);
+    }
+
+    listRecentRemoteServers(limit = 5) {
+        return this.listRemoteServers().slice(0, limit);
+    }
+
+    upsertRemoteServer(input) {
+        const payload = {
+            id: input.id,
+            name: (input.name || '').trim(),
+            ip: (input.ip || '').trim(),
+            sshPort: input.sshPort ? Number(input.sshPort) : 22,
+            webAdminUrl: input.webAdminUrl || null,
+            services: Array.isArray(input.services) ? input.services : [],
+            notes: input.notes || null,
+        };
+
+        if (!payload.name || !payload.ip) {
+            throw new Error('Name and IP are required');
+        }
+
+        if (payload.id) {
+            const stmt = this.db.prepare(
+                `UPDATE remote_servers SET name = ?, ip = ?, ssh_port = ?, web_admin_url = ?, services_json = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            );
+            stmt.run(
+                payload.name,
+                payload.ip,
+                payload.sshPort,
+                payload.webAdminUrl,
+                JSON.stringify(payload.services),
+                payload.notes,
+                payload.id,
+            );
+            return this.getRemoteServer(payload.id);
+        }
+
+        const stmt = this.db.prepare(
+            'INSERT INTO remote_servers (name, ip, ssh_port, web_admin_url, services_json, notes) VALUES (?, ?, ?, ?, ?, ?)',
+        );
+        const result = stmt.run(
+            payload.name,
+            payload.ip,
+            payload.sshPort,
+            payload.webAdminUrl,
+            JSON.stringify(payload.services),
+            payload.notes,
+        );
+        return this.getRemoteServer(result.lastInsertRowid);
+    }
+
+    getRemoteServer(id) {
+        const row = this.db
+            .prepare('SELECT id, name, ip, ssh_port, web_admin_url, services_json, notes, created_at, updated_at FROM remote_servers WHERE id = ?')
+            .get(id);
+        if (!row) return null;
+        return {
+            id: row.id,
+            name: row.name,
+            ip: row.ip,
+            sshPort: row.ssh_port,
+            webAdminUrl: row.web_admin_url,
+            services: row.services_json ? JSON.parse(row.services_json) : [],
+            notes: row.notes,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
         };
     }
 
@@ -484,6 +878,41 @@ class SourceStore {
             updatedAt: host.updated_at,
             services: serviceMap.get(host.id) || [],
         }));
+    }
+
+    countNetworkHosts() {
+        const row = this.db
+            .prepare('SELECT COUNT(*) as count FROM network_hosts')
+            .get();
+        return Number(row?.count || 0);
+    }
+
+    listRecentNetworkHosts(limit = 5) {
+        const hosts = this.listNetworkHosts();
+        return hosts.slice(0, limit);
+    }
+
+    getDashboardSummary() {
+        const entities = this.listEntities();
+        const contacts = this.getEntityByName('contacts');
+        const cases = this.getEntityByName('cases');
+
+        const totals = {
+            entities: entities.length,
+            contacts: contacts ? this.countEntityRecords(contacts.id) : 0,
+            cases: cases ? this.countEntityRecords(cases.id) : 0,
+            networkHosts: this.countNetworkHosts(),
+            remoteServers: this.countRemoteServers(),
+        };
+
+        return {
+            totals,
+            entities,
+            recentContacts: contacts ? this.listRecentEntityRecords(contacts.id, 5) : [],
+            recentCases: cases ? this.listRecentEntityRecords(cases.id, 5) : [],
+            remoteServers: this.listRecentRemoteServers(5),
+            networkHosts: this.listRecentNetworkHosts(5),
+        };
     }
 
     getNetworkHost(id) {
