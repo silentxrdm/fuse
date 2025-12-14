@@ -1,0 +1,155 @@
+<div class="dashboard" [class.dashboard--loading]="loading">
+    <div class="hero">
+        <div>
+            <p class="eyebrow">Modular ops center</p>
+            <h1>Unified dashboard</h1>
+            <p class="lede">
+                A ready-to-use layout inspired by free open dashboards combines your entities, contacts, cases, and network
+                inventory in one glance.
+            </p>
+            <button mat-flat-button color="primary" (click)="loadSummary()" [disabled]="loading">
+                <mat-icon>refresh</mat-icon>
+                Refresh metrics
+            </button>
+        </div>
+    </div>
+
+    <div class="grid stats" *ngIf="summary as data">
+        <mat-card class="stat" *ngFor="let metric of [
+            { label: 'Entities', value: data.totals.entities, accent: 'from-indigo-500 to-indigo-700' },
+            { label: 'Contacts', value: data.totals.contacts, accent: 'from-emerald-500 to-emerald-700' },
+            { label: 'Cases', value: data.totals.cases, accent: 'from-amber-500 to-amber-700' },
+            { label: 'Network hosts', value: data.totals.networkHosts, accent: 'from-sky-500 to-sky-700' },
+            { label: 'Remote servers', value: data.totals.remoteServers, accent: 'from-rose-500 to-rose-700' },
+        ]">
+            <div class="pill" [ngClass]="metric.accent">{{ metric.label }}</div>
+            <div class="value">{{ metric.value }}</div>
+            <p class="muted">Live totals from the backend.</p>
+        </mat-card>
+    </div>
+
+    <div class="grid panels" *ngIf="summary as data">
+        <mat-card class="panel">
+            <div class="panel__header">
+                <div>
+                    <p class="eyebrow">Dynamic entities</p>
+                    <h3>Recently added contacts</h3>
+                </div>
+                <a mat-button color="primary" routerLink="/example">Manage entities</a>
+            </div>
+            <table mat-table [dataSource]="recentContacts" class="mat-elevation-z1" *ngIf="recentContacts.length; else emptyContacts">
+                <ng-container matColumnDef="name">
+                    <th mat-header-cell *matHeaderCellDef>Name</th>
+                    <td mat-cell *matCellDef="let record">{{ record['name'] || '—' }}</td>
+                </ng-container>
+                <ng-container matColumnDef="phone">
+                    <th mat-header-cell *matHeaderCellDef>Phone</th>
+                    <td mat-cell *matCellDef="let record">{{ record['phone'] || '—' }}</td>
+                </ng-container>
+                <ng-container matColumnDef="email">
+                    <th mat-header-cell *matHeaderCellDef>Email</th>
+                    <td mat-cell *matCellDef="let record">{{ record['email'] || '—' }}</td>
+                </ng-container>
+                <tr mat-header-row *matHeaderRowDef="['name', 'phone', 'email']"></tr>
+                <tr mat-row *matRowDef="let row; columns: ['name', 'phone', 'email'];"></tr>
+            </table>
+            <ng-template #emptyContacts>
+                <div class="empty">No contacts captured yet.</div>
+            </ng-template>
+        </mat-card>
+
+        <mat-card class="panel">
+            <div class="panel__header">
+                <div>
+                    <p class="eyebrow">Case tracking</p>
+                    <h3>Recent cases</h3>
+                </div>
+                <span class="badge">{{ data.totals.cases }} total</span>
+            </div>
+            <table mat-table [dataSource]="recentCases" class="mat-elevation-z1" *ngIf="recentCases.length; else emptyCases">
+                <ng-container matColumnDef="title">
+                    <th mat-header-cell *matHeaderCellDef>Title</th>
+                    <td mat-cell *matCellDef="let record">{{ record['title'] || 'Untitled' }}</td>
+                </ng-container>
+                <ng-container matColumnDef="status">
+                    <th mat-header-cell *matHeaderCellDef>Status</th>
+                    <td mat-cell *matCellDef="let record">{{ record['status'] || '—' }}</td>
+                </ng-container>
+                <tr mat-header-row *matHeaderRowDef="['title', 'status']"></tr>
+                <tr mat-row *matRowDef="let row; columns: ['title', 'status'];"></tr>
+            </table>
+            <ng-template #emptyCases>
+                <div class="empty">No cases recorded yet.</div>
+            </ng-template>
+        </mat-card>
+
+        <mat-card class="panel full">
+            <div class="panel__header">
+                <div>
+                    <p class="eyebrow">Remote fleet</p>
+                    <h3>Servers & network hosts</h3>
+                </div>
+                <div class="links">
+                    <a mat-stroked-button color="primary" routerLink="/network">Network</a>
+                    <a mat-stroked-button color="primary" routerLink="/example">Add sources</a>
+                </div>
+            </div>
+            <div class="two-column">
+                <div>
+                    <h4>Remote servers</h4>
+                    <table mat-table [dataSource]="remoteServers" class="mat-elevation-z1" *ngIf="remoteServers.length; else emptyServers">
+                        <ng-container matColumnDef="name">
+                            <th mat-header-cell *matHeaderCellDef>Server</th>
+                            <td mat-cell *matCellDef="let server">
+                                <div class="stack">
+                                    <strong>{{ server.name }}</strong>
+                                    <span class="muted">{{ server.ip }} · SSH {{ server.sshPort || 22 }}</span>
+                                </div>
+                            </td>
+                        </ng-container>
+                        <ng-container matColumnDef="links">
+                            <th mat-header-cell *matHeaderCellDef>Links</th>
+                            <td mat-cell *matCellDef="let server">
+                                <div class="chips" *ngIf="server.services?.length; else noLinks">
+                                    <a
+                                        *ngFor="let svc of server.services"
+                                        [href]="svc.url || null"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        class="chip"
+                                    >
+                                        {{ svc.service || 'port' }} {{ svc.port }}
+                                    </a>
+                                </div>
+                                <ng-template #noLinks><span class="muted">No service URLs</span></ng-template>
+                            </td>
+                        </ng-container>
+                        <tr mat-header-row *matHeaderRowDef="['name', 'links']"></tr>
+                        <tr mat-row *matRowDef="let row; columns: ['name', 'links'];"></tr>
+                    </table>
+                    <ng-template #emptyServers>
+                        <div class="empty">No remote servers saved yet.</div>
+                    </ng-template>
+                </div>
+                <div>
+                    <h4>Network hosts</h4>
+                    <table mat-table [dataSource]="summary?.networkHosts || []" class="mat-elevation-z1" *ngIf="summary?.networkHosts?.length; else emptyHosts">
+                        <ng-container matColumnDef="ip">
+                            <th mat-header-cell *matHeaderCellDef>IP</th>
+                            <td mat-cell *matCellDef="let host">{{ host.ip }}</td>
+                        </ng-container>
+                        <ng-container matColumnDef="hostname">
+                            <th mat-header-cell *matHeaderCellDef>Hostname</th>
+                            <td mat-cell *matCellDef="let host">{{ host.hostname || '—' }}</td>
+                        </ng-container>
+                        <tr mat-header-row *matHeaderRowDef="['ip', 'hostname']"></tr>
+                        <tr mat-row *matRowDef="let row; columns: ['ip', 'hostname'];"></tr>
+                    </table>
+                    <ng-template #emptyHosts>
+                        <div class="empty">No hosts discovered yet.</div>
+                    </ng-template>
+                </div>
+            </div>
+        </mat-card>
+    </div>
+</div>

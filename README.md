@@ -72,7 +72,31 @@ The default `example` route now surfaces a UI to:
   - `POST /api/network/import` — bulk add hosts from a scan tool payload (expects `{ hosts: [...] }`).
   - `POST /api/network/scan` — trigger a port scan for a single host or subnet and persist the results.
   - `POST /api/network/hosts/:id/services` — attach service links (e.g., RDP, SSH, admin UIs) for quick launch from anywhere in the app.
-- The Angular `/network` page surfaces tables and forms to manage hosts, import scan results, start port scans, and add service links that can be reused throughout the UI.
+  - The Angular `/network` page surfaces tables and forms to manage hosts, import scan results, start port scans, and add service links that can be reused throughout the UI.
+
+### Unified dashboard
+
+- The `/dashboard` route uses a free open dashboard layout to highlight totals for entities, contacts, cases, network hosts, and remote servers.
+- Recent contacts, cases, hosts, and remote server links render side-by-side so you can jump to network scans or entity management from one place.
+
+### Dynamic entities, contacts, and cases
+
+- The backend now supports a dynamic entity generator that stores metadata in SQLite and creates per-entity tables automatically.
+- Base entities for `contacts` and `cases` are seeded on startup. You can extend them or create new ones via REST:
+  - `GET /api/entities` — list available entities and metadata.
+  - `POST /api/entities` — create a new entity with `{ name, displayName?, fields: [{ name, type, required? }] }`.
+  - `GET /api/entities/:id` — fetch an entity with its fields.
+  - `GET /api/entities/:id/records` — list saved records for that entity.
+  - `POST /api/entities/:id/records` — add a record; payload fields are derived from the entity definition.
+  - `PUT/PATCH /api/entities/:id/records/:recordId` — update a record.
+  - `DELETE /api/entities/:id/records/:recordId` — remove a record.
+
+### Remote servers
+
+- Track remote servers alongside your network inventory with:
+  - `GET /api/remote-servers` — list saved servers with SSH/web links and custom services.
+  - `POST /api/remote-servers` — create or update a server `{ id?, name, ip, sshPort?, webAdminUrl?, services?, notes? }`.
+  - `GET /api/remote-servers/:id` — fetch a single server entry.
 
 ## Running unit tests
 

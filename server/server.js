@@ -166,6 +166,28 @@ async function requestListener(req, res) {
         return;
     }
 
+    if (url.pathname === '/api/dashboard/summary' && req.method === 'GET') {
+        const summary = store.getDashboardSummary();
+        sendJson(res, 200, summary);
+        return;
+    }
+
+    if (url.pathname === '/api/entities' && req.method === 'GET') {
+        sendJson(res, 200, { entities: store.listEntities() });
+        return;
+    }
+
+    if (url.pathname === '/api/entities' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const entity = store.createEntity(body);
+            sendJson(res, 201, { entity });
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
     if (url.pathname === '/api/auth/sign-in' && req.method === 'POST') {
         try {
             const body = await readJsonBody(req);
@@ -283,6 +305,69 @@ async function requestListener(req, res) {
         return;
     }
 
+    const entityMatch = url.pathname.match(/^\/api\/entities\/(\d+)$/);
+    if (entityMatch && req.method === 'GET') {
+        const entity = store.getEntityById(Number(entityMatch[1]));
+        if (!entity) {
+            notFound(res);
+            return;
+        }
+        sendJson(res, 200, { entity });
+        return;
+    }
+
+    const entityRecordsMatch = url.pathname.match(/^\/api\/entities\/(\d+)\/records$/);
+    if (entityRecordsMatch && req.method === 'GET') {
+        const result = store.listEntityRecords(Number(entityRecordsMatch[1]));
+        if (!result) {
+            notFound(res);
+            return;
+        }
+        sendJson(res, 200, result);
+        return;
+    }
+
+    if (entityRecordsMatch && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const record = store.createEntityRecord(Number(entityRecordsMatch[1]), body);
+            if (!record) {
+                notFound(res);
+                return;
+            }
+            sendJson(res, 201, { record });
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    const entityRecordMatch = url.pathname.match(/^\/api\/entities\/(\d+)\/records\/(\d+)$/);
+    if (entityRecordMatch && (req.method === 'PUT' || req.method === 'PATCH')) {
+        try {
+            const body = await readJsonBody(req);
+            const record = store.updateEntityRecord(Number(entityRecordMatch[1]), Number(entityRecordMatch[2]), body);
+            if (!record) {
+                notFound(res);
+                return;
+            }
+            sendJson(res, 200, { record });
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    if (entityRecordMatch && req.method === 'DELETE') {
+        const ok = store.deleteEntityRecord(Number(entityRecordMatch[1]), Number(entityRecordMatch[2]));
+        if (!ok) {
+            notFound(res);
+            return;
+        }
+        sendJson(res, 200, { success: true });
+        return;
+    }
+
     const pageSlugMatch = url.pathname.match(/^\/api\/pages\/([^/]+)$/);
     if (pageSlugMatch && req.method === 'GET') {
         const page = store.getPageBySlug(pageSlugMatch[1]);
@@ -376,6 +461,14 @@ async function requestListener(req, res) {
         });
 
         const baseItem = {
+            id: 'dashboard',
+            title: 'Dashboard',
+            type: 'basic',
+            icon: 'heroicons_outline:home-modern',
+            link: '/dashboard',
+        };
+
+        const dataSourcesItem = {
             id: 'example',
             title: 'Data sources',
             type: 'basic',
@@ -392,10 +485,10 @@ async function requestListener(req, res) {
         };
 
         const navigation = {
-            default: [baseItem, networkItem, ...dynamicItems],
-            compact: [baseItem, networkItem, ...dynamicItems],
-            futuristic: [baseItem, networkItem, ...dynamicItems],
-            horizontal: [baseItem, networkItem, ...dynamicItems],
+            default: [baseItem, dataSourcesItem, networkItem, ...dynamicItems],
+            compact: [baseItem, dataSourcesItem, networkItem, ...dynamicItems],
+            futuristic: [baseItem, dataSourcesItem, networkItem, ...dynamicItems],
+            horizontal: [baseItem, dataSourcesItem, networkItem, ...dynamicItems],
         };
 
         sendJson(res, 200, navigation);
@@ -426,6 +519,33 @@ async function requestListener(req, res) {
         } catch (error) {
             sendJson(res, 400, { message: error.message });
         }
+        return;
+    }
+
+    if (url.pathname === '/api/remote-servers' && req.method === 'GET') {
+        sendJson(res, 200, { servers: store.listRemoteServers() });
+        return;
+    }
+
+    if (url.pathname === '/api/remote-servers' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const server = store.upsertRemoteServer(body);
+            sendJson(res, 201, { server });
+        } catch (error) {
+            sendJson(res, 400, { message: error.message });
+        }
+        return;
+    }
+
+    const remoteServerMatch = url.pathname.match(/^\/api\/remote-servers\/(\d+)$/);
+    if (remoteServerMatch && req.method === 'GET') {
+        const server = store.getRemoteServer(Number(remoteServerMatch[1]));
+        if (!server) {
+            notFound(res);
+            return;
+        }
+        sendJson(res, 200, { server });
         return;
     }
 
